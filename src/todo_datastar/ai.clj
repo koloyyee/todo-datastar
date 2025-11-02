@@ -1,7 +1,7 @@
 (ns todo-datastar.ai
   (:require [wkok.openai-clojure.api :as ai]))
 
-(def open-router-key "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")
+(def open-router-key "key")
 
 (def tools
   [{:type "function"
