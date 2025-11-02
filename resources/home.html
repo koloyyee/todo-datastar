@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Datastar Todo</title>
+
+  <script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@main/bundles/datastar.js"></script>
+</head>
+
+<body>
+  <h1>Datastar Todo List</h1>
+
+  <ul id="todo-list"></ul>
+  <button data-on-click="@get('/todos')"> Get Todos</button>
+  <form id="create-item-form" > 
+    <label for="title"> Title</label>
+    <input type="text" id="title" name="title"/>
+    <label for="description"> Description</label>
+    <input type="text" id="description" name="description"/>
+    <button type="submit" data-on-click="@post('/todos', {contentType: 'form'})">Add Item</button>
+  </form>
+</body>
+
+</html>
