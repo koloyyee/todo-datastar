@@ -2,9 +2,11 @@
 (ns todo-datastar.main
   ;; (:gen-class)
   (:require
+   ;; Import Clojure dependencies.
    [clojure.java.io :as io]
    [hiccup2.core :as hp]
    [org.httpkit.server :as server]
+   [ring.adapter.jetty :as jetty]
    [reitit.ring]
    [reitit.ring.middleware.parameters :as parameters]
    [ring.util.response :as resp]
@@ -13,14 +15,17 @@
    [next.jdbc.connection :as connection]
    [next.jdbc :as jdbc]
    [honey.sql :as sql]
-   [todo-datastar.html :as html]
-   ;; [todo-datastar.db :refer [items]]
-   )
+   ;; Import from other namespace.
+   [todo-datastar.html :as html])
+  ;; Import Java Dependencies.
   (:import (com.zaxxer.hikari HikariDataSource)
            (org.flywaydb.core Flyway)
-           (java.util.concurrent Executors)))
+           (java.util.concurrent Executors)
+           org.eclipse.jetty.server.Server
+           (org.eclipse.jetty.util.thread QueuedThreadPool)))
 
-;; DB
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; DATABASE ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; DB Connection
 (defonce db-pool
   (delay
     (connection/->pool HikariDataSource
@@ -30,6 +35,7 @@
                         :port 5432
                         :user "datastar"
                         :password "postgres"})))
+;; Migration
 (defn migrate-db! []
   (let [flyway (-> (Flyway/configure)
                    (.dataSource "jdbc:postgresql://localhost:5432/postgres" "datastar" "postgres")
@@ -38,8 +44,8 @@
     (.migrate flyway)))
 
 
-;; DB Logic
-(defn insert-todo! 
+;; SQL
+(defn insert-todo!
   "Inserting new item to the Todos table"
   [title description]
   (let [query (sql/format
@@ -51,13 +57,13 @@
     (jdbc/execute! @db-pool query)))
 ;;(insert-todo! "carrot" "carrot is on sale buy it!")
 
-(defn select-todos 
- "Returning all items from Todos table with raw SQL" 
+(defn select-todos
+  "Returning all items from Todos table with raw SQL"
   []
   (jdbc/execute! @db-pool ["SELECT * FROM todos"]))
-(select-todos)
+;;(select-todos)
 
-(defn select-todo 
+(defn select-todo
   "Selecting item by id with HoneySQL"
   [id]
   (let [query (sql/format {:select [:*]
@@ -66,8 +72,8 @@
     (jdbc/execute! @db-pool query)))
 (select-todo 1)
 
-(defn mark-done! 
-"Marking item as done."
+(defn mark-done!
+  "Marking item as done."
   [id]
   (let [query (sql/format {:update  :todos
                            :set {:done true}
@@ -76,18 +82,17 @@
 (mark-done! 1)
 
 (defn delete-todo!
- "Delete item by id with type hinting in parameter" 
+  "Delete item by id with type hinting in parameter"
   [^Integer id]
   (let [query (sql/format {:delete-from [:todos]
                            :where [:= :id id]})]
     (jdbc/execute! @db-pool query)))
-
 (delete-todo! 1)
 
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; HTML ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Generated HTML in Hiccup style as data
-(defn list-item 
-"Return a single row of todo item in li"  
+(defn list-item
+  "Return a single row of todo item in li"
   [item]
   [:li {:id (:todos/id item)}
    [:h2.title (:todos/title item)]
@@ -102,7 +107,7 @@
 
 ;; Q: How can i add the list the html with id todo-list?
 ;; A: it "patches" by the id
-(defn todo-list 
+(defn todo-list
   "Building up the ul for todo items."
   [items]
   ;; Setting up for d*/patch-elements!
@@ -114,30 +119,27 @@
 (todo-list (select-todos))
 
 
-;; HTML
+;; HTML read as string example
 (def home-page
   "Ingesting html file"
   (slurp (io/resource "home.html")))
 
-(defn home 
-"Rendering HTML in string for the index page from Hiccup elements"
-  [_] 
+;;;;;;;;;;;;;;;;;;;;;;;; HANDLERS (Controllers) ;;;;;;;;;;;;;;;;;;;;;;
+
+(defn home
+  "Rendering HTML in string for the index page from Hiccup elements"
+  [_]
   (-> (html/home)
       hp/html
       str
       (resp/response)
       (resp/content-type "text/html")))
 
-(defn str-html [el]
-  (str
-   (hp/html el)))
-
-;; Ring Handlers
-(defn gen-list 
- "Router handler for returning todo list" 
+(defn gen-list
+  "Router handler for returning todo list"
   [request]
   (let [items (select-todos)]
-  ;; sse response and patch to HTML element by id
+    ;; sse response and patch to HTML element by id
     (hk-gen/->sse-response
      request
      {hk-gen/on-open
@@ -148,9 +150,9 @@
                                         str))
         (d*/close-sse! sse-gen))})))
 
-(-> (todo-list (select-todos))
-    hp/html
-    str)
+#_(-> (todo-list (select-todos))
+      hp/html
+      str)
 
 (defn item-done [request]
   (let [id (Integer/parseInt (get-in request [:path-params :id]))]
@@ -169,7 +171,7 @@
     (insert-todo! title description)
     (gen-list request)))
 
-;; Router
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;; ROUTER ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (def routes
   [["/" {:handler home}]
    ["/todos" {:get gen-list
@@ -181,51 +183,95 @@
              {:data {:middleware [parameters/parameters-middleware]}}))
 (def handler (reitit.ring/ring-handler router))
 
-;; Server
-(defonce !server (atom nil))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;; SERVER ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn stop! []
+;; http-kit server
+(defonce !server  (atom nil))
+
+
+
+;; http-kit
+(defn stop-hk! []
   (when-not (nil? @!server)
     (@!server :timeout 1000)
     (reset! !server nil)))
 
-(defn start! [handler opts]
-  (stop!)
-  (reset! !server
-          (server/run-server
-           handler
-           (merge {:port 8000}
-                  opts)))
 
-  (println "Server running on " (get opts :port 8080)))
+(defn start-hk! [handler opts]
+  (let [opts (merge {:port 8080} opts)]
+    (stop-hk!)
+    (println " Server running on " (:port opts))
+    (reset! !server
+            (server/run-server
+             handler
+             opts))))
 
-(defn start-sys
-  "starting the server, then connect db and migrate"
+(defn start-hk-sys
+  " starting the server, then connect db and migrate "
   []
   (migrate-db!)
-  (start! #'handler {:port 8080
-                     :worker-pool (Executors/newVirtualThreadPerTaskExecutor)}))
+  (start-hk! #'handler {:port 8080
+                        :worker-pool (Executors/newVirtualThreadPerTaskExecutor)}))
 
 (defn stop-sys
-  "stopping the server then disconnect db"
+  " stopping the server then disconnect db "
   []
-  (stop!)
+  (stop-hk!)
   ;;(.close @db-pool)
   )
 
-(defn restart-sys []
+(defn restart-hk-sys []
   (stop-sys)
-  (start-sys))
+  (start-hk-sys))
+
+;; ring-jetty
+(defonce !jetty-server (atom nil))
+
+(defn start-jetty! [handler & {:as opts}]
+  (let [opts (merge {:port 8081 :join? false} opts)]
+    (println "Jetty Server running on " (:port opts))
+    (reset! !jetty-server
+            (jetty/run-jetty handler opts))))
+
+(defn stop-jetty! []
+  (println "Stopping server: " @!jetty-server)
+  (when-not (nil? @!jetty-server)
+    (.stop ^Server @!jetty-server)
+    (reset! !jetty-server nil)))
+
+(defn restart-jetty! [handler & {:as opts}]
+  ;;(swap! !jetty-server
+  ;;       (fn [server]
+  ;;         (when server
+  ;;           (stop-jetty! server))
+  ;;         (start-jetty! handler opts)))
+  (stop-jetty!)
+  (start-jetty! handler opts))
+  
+(def thread-pool
+  (.setVirtualThreadsExecutor  (new QueuedThreadPool)
+                               (Executors/newVirtualThreadPerTaskExecutor)))
+
+(defn start-jetty-sys []
+  (migrate-db!)
+  (start-jetty! #'handler thread-pool))
+
 
 (comment
-  (stop!)
-  (start-sys)
+;; Http-kit
+  (stop-hk!)
+  (start-hk-sys)
   (stop-sys)
- (restart-sys) 
+  (restart-hk-sys)
+ ;; Jetty  
+  (start-jetty-sys)
+  (stop-jetty!)
+  (restart-jetty! handler thread-pool)
+
   )
 
 (defn -main
   [& _]
-  (start-sys)
+  (start-hk-sys)
   (.addShutdownHook (Runtime/getRuntime)
-                    (Thread. #(do (stop!) (shutdown-agents)))))
+                    (Thread. #(do (stop-hk!) (shutdown-agents)))))

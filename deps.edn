@@ -1,20 +1,31 @@
 {:paths ["src" "resources"]
  :deps {org.clojure/clojure {:mvn/version "1.11.1"}
+        ;; datastar setup
         dev.data-star.clojure/sdk {:mvn/version "1.0.0-RC3"}
-        dev.data-star.clojure/http-kit {:mvn/version "1.0.0-RC3"}
-        com.cnuernber/charred {:mvn/version "1.037"}
-        dev.data-star.clojure/http-kit-malli-schemas {:mvn/version "1.0.0-RC3"}
         dev.data-star.clojure/malli-schemas {:mvn/version "1.0.0-RC3"}
+        ;; http-kit
+        http-kit/http-kit              {:mvn/version "2.8.1"}
+        dev.data-star.clojure/http-kit {:mvn/version "1.0.0-RC3"}
+        dev.data-star.clojure/http-kit-malli-schemas {:mvn/version "1.0.0-RC3"}
+        ;; ring
+        ring/ring-jetty-adapter    {:mvn/version "1.13.0"}
+        dev.data-star.clojure/ring {:mvn/version "1.0.0-RC4"}
+        dev.data-star.clojure/ring-malli-schemas {:mvn/version "1.0.0-RC4"}
+        ;; rendering
+        com.cnuernber/charred {:mvn/version "1.037"}
         dev.onionpancakes/chassis {:mvn/version "1.0.365"}
+        hiccup/hiccup {:mvn/version "2.0.0"}
+        ;; routing
         metosin/reitit {:mvn/version "0.9.1"}
+        ;; AI
         net.clojars.wkok/openai-clojure {:mvn/version "0.23.0"}
+        ;; Database
         com.zaxxer/HikariCP {:mvn/version "6.3.0"}
         org.postgresql/postgresql {:mvn/version "42.7.7"}
         com.github.seancorfield/next.jdbc {:mvn/version "1.3.1070"}
         org.flywaydb/flyway-core {:mvn/version "11.8.2"}
         org.flywaydb/flyway-database-postgresql {:mvn/version "11.8.2"}
-        com.github.seancorfield/honeysql {:mvn/version "2.7.1350"}
-        hiccup/hiccup {:mvn/version "2.0.0"}}
+        com.github.seancorfield/honeysql {:mvn/version "2.7.1350"}}
  :aliases
  {:run-m {:main-opts ["-m" "todo-datastar.main"]}
   :run-x {:ns-default todo-datastar.main
