@@ -15,6 +15,7 @@
    [next.jdbc.connection :as connection]
    [next.jdbc :as jdbc]
    [honey.sql :as sql]
+   [datomic.api :as d]
    ;; Import from other namespace.
    [todo-datastar.html :as html])
   ;; Import Java Dependencies.
@@ -30,7 +31,7 @@
   (delay
     (connection/->pool HikariDataSource
                        {:dbtype "postgres"
-                        :dbname "postgres"
+                        :dbname "todo_datastar"
                         :host "localhost"
                         :port 5432
                         :user "datastar"
@@ -38,11 +39,13 @@
 ;; Migration
 (defn migrate-db! []
   (let [flyway (-> (Flyway/configure)
-                   (.dataSource "jdbc:postgresql://localhost:5432/postgres" "datastar" "postgres")
+                   (.dataSource "jdbc:postgresql://localhost:5432/todo_datastar" "datastar" "postgres")
                    (.locations (into-array ["classpath:db/migration"]))
+                   (.baselineOnMigrate true)
                    (.load))]
     (.migrate flyway)))
 
+(migrate-db!)
 
 ;; SQL
 (defn insert-todo!
@@ -70,7 +73,7 @@
                            :from [:todos]
                            :where [:= :todos.id id]})]
     (jdbc/execute! @db-pool query)))
-(select-todo 1)
+;;(select-todo 1)
 
 (defn mark-done!
   "Marking item as done."
@@ -79,7 +82,7 @@
                            :set {:done true}
                            :where [:= :id id]})]
     (jdbc/execute! @db-pool query)))
-(mark-done! 1)
+;;(mark-done! 1)
 
 (defn delete-todo!
   "Delete item by id with type hinting in parameter"
@@ -87,7 +90,12 @@
   (let [query (sql/format {:delete-from [:todos]
                            :where [:= :id id]})]
     (jdbc/execute! @db-pool query)))
-(delete-todo! 1)
+;;(delete-todo! 1)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Datomic ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(def db-uri "datomic:sql://todo_datomic?jdbc:postgresql://localhost:5432/todo_datastar?user=datastar&password=postgres")
+(d/create-database db-uri)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; HTML ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Generated HTML in Hiccup style as data

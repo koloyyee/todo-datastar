@@ -5,3 +5,7 @@ CREATE TABLE todos (
   description TEXT,
   done BOOLEAN DEFAULT FALSE
 );
+ALTER TABLE todos
+ OWNER TO datastar;
+GRANT ALL ON TABLE todos TO datastar;
+GRANT ALL ON TABLE todos TO public;
